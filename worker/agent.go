@@ -69,11 +69,12 @@ func (a *agent) work() {
 			data = append(leftdata, data...)
 		}
 		if len(data) < minPacketLength { // not enough data
-			leftdata = data
-			continue
+                        leftdata = data
+		        continue
 		}
 		if inpack, l, err = decodeInPack(data); err != nil {
 			a.worker.err(err)
+                        leftdata = data
 			continue
 		}
 		leftdata = nil
