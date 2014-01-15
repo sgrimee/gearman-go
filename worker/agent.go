@@ -73,7 +73,7 @@ func (a *agent) work() {
 		        continue
 		}
 		if inpack, l, err = decodeInPack(data); err != nil {
-			a.worker.err(err)
+			//a.worker.err(err)
                         leftdata = data
 			continue
 		}
