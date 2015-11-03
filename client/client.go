@@ -3,10 +3,14 @@
 package client
 
 import (
-	"io"
+	"bufio"
 	"net"
 	"sync"
-	"bufio"
+	"time"
+)
+
+var (
+	DefaultTimeout time.Duration = 1000
 )
 
 // One client connect to one server.
@@ -18,9 +22,10 @@ type Client struct {
 	respHandler         map[string]ResponseHandler
 	innerHandler        map[string]ResponseHandler
 	in                  chan *Response
-	isConn              bool
 	conn                net.Conn
-	rw					*bufio.ReadWriter
+	rw                  *bufio.ReadWriter
+
+	ResponseTimeout time.Duration // response timeout for do() in ms
 
 	ErrorHandler ErrorHandler
 }
@@ -28,11 +33,12 @@ type Client struct {
 // Return a client.
 func New(network, addr string) (client *Client, err error) {
 	client = &Client{
-		net:          network,
-		addr:         addr,
-		respHandler:  make(map[string]ResponseHandler, queueSize),
-		innerHandler: make(map[string]ResponseHandler, queueSize),
-		in:           make(chan *Response, queueSize),
+		net:             network,
+		addr:            addr,
+		respHandler:     make(map[string]ResponseHandler, queueSize),
+		innerHandler:    make(map[string]ResponseHandler, queueSize),
+		in:              make(chan *Response, queueSize),
+		ResponseTimeout: DefaultTimeout,
 	}
 	client.conn, err = net.Dial(client.net, client.addr)
 	if err != nil {
@@ -40,7 +46,6 @@ func New(network, addr string) (client *Client, err error) {
 	}
 	client.rw = bufio.NewReadWriter(bufio.NewReader(client.conn),
 		bufio.NewWriter(client.conn))
-	client.isConn = true
 	go client.readLoop()
 	go client.processLoop()
 	return
@@ -64,9 +69,6 @@ func (client *Client) read(length int) (data []byte, err error) {
 	// read until data can be unpacked
 	for i := length; i > 0 || len(data) < minPacketLength; i -= n {
 		if n, err = client.rw.Read(buf); err != nil {
-			if err == io.EOF {
-				err = ErrLostConn
-			}
 			return
 		}
 		data = append(data, buf[0:n]...)
@@ -83,12 +85,18 @@ func (client *Client) readLoop() {
 	var err error
 	var resp *Response
 ReadLoop:
-	for {
+	for client.conn != nil {
 		if data, err = client.read(bufferSize); err != nil {
-			client.err(err)
-			if err == ErrLostConn {
+			if opErr, ok := err.(*net.OpError); ok {
+				if opErr.Timeout() {
+					client.err(err)
+				}
+				if opErr.Temporary() {
+					continue
+				}
 				break
 			}
+			client.err(err)
 			// If it is unexpected error and the connection wasn't
 			// closed by Gearmand, the client should close the conection
 			// and reconnect to job server.
@@ -104,6 +112,7 @@ ReadLoop:
 		}
 		if len(leftdata) > 0 { // some data left for processing
 			data = append(leftdata, data...)
+			leftdata = nil
 		}
 		for {
 			l := len(data)
@@ -145,10 +154,8 @@ func (client *Client) processLoop() {
 		case dtWorkData, dtWorkWarning, dtWorkStatus:
 			resp = client.handleResponse(resp.Handle, resp)
 		case dtWorkComplete, dtWorkFail, dtWorkException:
-			resp = client.handleResponse(resp.Handle, resp)
-			if resp != nil {
-				delete(client.respHandler, resp.Handle)
-			}
+			client.handleResponse(resp.Handle, resp)
+			delete(client.respHandler, resp.Handle)
 		}
 	}
 }
@@ -176,24 +183,44 @@ func (client *Client) handleInner(key string, resp *Response) *Response {
 	return resp
 }
 
+type handleOrError struct {
+	handle string
+	err    error
+}
+
 func (client *Client) do(funcname string, data []byte,
 	flag uint32) (handle string, err error) {
-	var mutex sync.Mutex
-	mutex.Lock()
+	if client.conn == nil {
+		return "", ErrLostConn
+	}
+	var result = make(chan handleOrError, 1)
 	client.lastcall = "c"
 	client.innerHandler["c"] = func(resp *Response) {
 		if resp.DataType == dtError {
 			err = getError(resp.Data)
+			result <- handleOrError{"", err}
 			return
 		}
 		handle = resp.Handle
-		mutex.Unlock()
+		result <- handleOrError{handle, nil}
 	}
 	id := IdGen.Id()
 	req := getJob(id, []byte(funcname), data)
 	req.DataType = flag
-	client.write(req)
-	mutex.Lock()
+	if err = client.write(req); err != nil {
+		delete(client.innerHandler, "c")
+		client.lastcall = ""
+		return
+	}
+	var timer = time.After(client.ResponseTimeout * time.Millisecond)
+	select {
+	case ret := <-result:
+		return ret.handle, ret.err
+	case <-timer:
+		delete(client.innerHandler, "c")
+		client.lastcall = ""
+		return "", ErrLostConn
+	}
 	return
 }
 
@@ -211,7 +238,7 @@ func (client *Client) Do(funcname string, data []byte,
 		datatype = dtSubmitJob
 	}
 	handle, err = client.do(funcname, data, datatype)
-	if h != nil {
+	if err == nil && h != nil {
 		client.respHandler[handle] = h
 	}
 	return
@@ -221,6 +248,9 @@ func (client *Client) Do(funcname string, data []byte,
 // flag can be set to: JobLow, JobNormal and JobHigh
 func (client *Client) DoBg(funcname string, data []byte,
 	flag byte) (handle string, err error) {
+	if client.conn == nil {
+		return "", ErrLostConn
+	}
 	var datatype uint32
 	switch flag {
 	case JobLow:
@@ -236,16 +266,19 @@ func (client *Client) DoBg(funcname string, data []byte,
 
 // Get job status from job server.
 func (client *Client) Status(handle string) (status *Status, err error) {
+	if client.conn == nil {
+		return nil, ErrLostConn
+	}
 	var mutex sync.Mutex
 	mutex.Lock()
 	client.lastcall = "s" + handle
 	client.innerHandler["s"+handle] = func(resp *Response) {
+		defer mutex.Unlock()
 		var err error
 		status, err = resp._status()
 		if err != nil {
 			client.err(err)
 		}
-		mutex.Unlock()
 	}
 	req := getRequest()
 	req.DataType = dtGetStatus
@@ -257,6 +290,9 @@ func (client *Client) Status(handle string) (status *Status, err error) {
 
 // Echo.
 func (client *Client) Echo(data []byte) (echo []byte, err error) {
+	if client.conn == nil {
+		return nil, ErrLostConn
+	}
 	var mutex sync.Mutex
 	mutex.Lock()
 	client.innerHandler["e"] = func(resp *Response) {

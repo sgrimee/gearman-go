@@ -5,7 +5,7 @@ const (
 	// queue size
 	queueSize = 8
 	// read buffer size
-	bufferSize = 1024
+	bufferSize = 8192
 	// min packet length
 	minPacketLength = 12
 
@@ -50,11 +50,11 @@ const (
 	dtSubmitJobLow    = 33
 	dtSubmitJobLowBg  = 34
 
-	WorkComplate =	dtWorkComplete
-	WorkDate = dtWorkData
-	WorkStatus = dtWorkStatus
-	WorkWarning = dtWorkWarning
-	WorkFail = dtWorkFail
+	WorkComplate  = dtWorkComplete
+	WorkData      = dtWorkData
+	WorkStatus    = dtWorkStatus
+	WorkWarning   = dtWorkWarning
+	WorkFail      = dtWorkFail
 	WorkException = dtWorkException
 )
 

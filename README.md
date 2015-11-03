@@ -37,38 +37,46 @@ Usage
 
 ## Worker
 
-    w := worker.New(worker.Unlimited)
-    w.ErrHandler = func(e error) {
-        log.Println(e)
-    }
-    w.AddServer("127.0.0.1:4730")
-    w.AddFunc("ToUpper", ToUpper, worker.Immediately)
-    w.AddFunc("ToUpperTimeOut5", ToUpper, 5)
-	if err := w.Ready(); err != nil {
-		log.Fatal(err)
-		return
-	}
-	go w.Work()
-	
+```go
+// Limit number of concurrent jobs execution. 
+// Use worker.Unlimited (0) if you want no limitation.
+w := worker.New(worker.OneByOne)
+w.ErrHandler = func(e error) {
+	log.Println(e)
+}
+w.AddServer("127.0.0.1:4730")
+// Use worker.Unlimited (0) if you want no timeout
+w.AddFunc("ToUpper", ToUpper, worker.Unlimited)
+// This will give a timeout of 5 seconds
+w.AddFunc("ToUpperTimeOut5", ToUpper, 5)
+
+if err := w.Ready(); err != nil {
+	log.Fatal(err)
+	return
+}
+go w.Work()
+```
 
 ## Client
 
-	// ...
-	c, err := client.New("tcp4", "127.0.0.1:4730")
-    // ... error handling
-	defer c.Close()
-	c.ErrorHandler = func(e error) {
-        log.Println(e)
-    }
-    echo := []byte("Hello\x00 world")
-	echomsg, err := c.Echo(echo)
-	// ... error handling
-    log.Println(string(echomsg))
-    jobHandler := func(job *client.Job) {
-        log.Printf("%s", job.Data)
-    }
-    handle, err := c.Do("ToUpper", echo, client.JOB_NORMAL, jobHandler)
-	// ...	
+```go
+// ...
+c, err := client.New("tcp4", "127.0.0.1:4730")
+// ... error handling
+defer c.Close()
+c.ErrorHandler = func(e error) {
+	log.Println(e)
+}
+echo := []byte("Hello\x00 world")
+echomsg, err := c.Echo(echo)
+// ... error handling
+log.Println(string(echomsg))
+jobHandler := func(resp *client.Response) {
+	log.Printf("%s", resp.Data)
+}
+handle, err := c.Do("ToUpper", echo, client.JobNormal, jobHandler)
+// ...	
+```
 
 Branches
 ========
@@ -81,17 +89,34 @@ __Use at your own risk!__
  * 0.2-dev Refactoring a lot of things
  * 0.1-testing Old API and some known issues, eg. [issue-14](https://github.com/mikespook/gearman-go/issues/14)
 
-Authors
-=======
+Contributors
+============
 
- * Xing Xing <mikespook@gmail.com> [Blog](http://mikespook.com) [@Twitter](http://twitter.com/mikespook)
+Great thanks to all of you for your support and interest!
+
+(_Alphabetic order_)
+ 
+ * [Alex Zylman](https://github.com/azylman)
+ * [C.R. Kirkwood-Watts](https://github.com/kirkwood)
+ * [Damian Gryski](https://github.com/dgryski)
+ * [Gabriel Cristian Alecu](https://github.com/AzuraMeta)
+ * [Graham Barr](https://github.com/gbarr)
+ * [Ingo Oeser](https://github.com/nightlyone)
+ * [jake](https://github.com/jbaikge)
+ * [Joe Higton](https://github.com/draxil)
+ * [Jonathan Wills](https://github.com/runningwild)
+ * [Kevin Darlington](https://github.com/kdar)
+ * [miraclesu](https://github.com/miraclesu)
+ * [Paul Mach](https://github.com/paulmach)
+ * [Randall McPherson](https://github.com/rlmcpherson)
+ * [Sam Grimee](https://github.com/sgrimee)
+
+Maintainer
+==========
+
+ * [Xing Xing](http://mikespook.com) &lt;<mikespook@gmail.com>&gt; [@Twitter](http://twitter.com/mikespook)
 
 Open Source - MIT Software License
 ==================================
-Copyright (c) 2012 Xing Xing
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+See LICENSE.
