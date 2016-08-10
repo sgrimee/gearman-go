@@ -129,7 +129,7 @@ func (a *agent) Close() {
 func (a *agent) Grab() {
 	avg := sigar.LoadAverage{}
 	avg.Get()
-	time.Sleep(avg.One * time.Millisecond)
+	time.Sleep(time.Duration(avg.One*1000) * time.Microsecond)
 
 	a.Lock()
 	defer a.Unlock()
