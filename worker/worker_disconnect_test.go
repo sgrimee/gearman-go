@@ -27,7 +27,8 @@ func init() {
 }
 
 func run_gearman() {
-	gm_cmd := exec.Command(`/usr/sbin/gearmand`, `--port`, port)
+	gm_cmd := exec.Command(`/usr/local/opt/gearman/sbin/gearmand`, `--port`, port)
+	//gm_cmd := exec.Command(`/usr/sbin/gearmand`, `--port`, port)
 	start_err := gm_cmd.Start()
 
 	if start_err != nil {
@@ -170,6 +171,7 @@ func TestDcRc(t *testing.T) {
 			done <- true
 			return
 		}, 0); err != nil {
+		t.Error("Got error:")
 		t.Error(err)
 	}
 
@@ -184,6 +186,7 @@ func TestDcRc(t *testing.T) {
 				if rcerr != nil {
 					time.Sleep(250 * time.Millisecond)
 				} else {
+					log.Println("Reconnected.")
 					reconnected = true
 				}
 			}

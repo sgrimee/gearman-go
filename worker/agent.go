@@ -7,6 +7,9 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
+
+	"github.com/cloudfoundry/gosigar"
 )
 
 // The agent of job server.
@@ -87,12 +90,12 @@ func (a *agent) work() {
 			data = append(leftdata, data...)
 		}
 		if len(data) < minPacketLength { // not enough data
-                        leftdata = data
-		        continue
+			leftdata = data
+			continue
 		}
 		if inpack, l, err = decodeInPack(data); err != nil {
 			//a.worker.err(err)
-                        leftdata = data
+			leftdata = data
 			continue
 		}
 		leftdata = nil
@@ -124,6 +127,10 @@ func (a *agent) Close() {
 }
 
 func (a *agent) Grab() {
+	avg := sigar.LoadAverage{}
+	avg.Get()
+	time.Sleep(avg.One * time.Millisecond)
+
 	a.Lock()
 	defer a.Unlock()
 	a.grab()
